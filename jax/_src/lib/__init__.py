@@ -116,7 +116,13 @@ import jaxlib.cpu_sparse as cpu_sparse  # noqa: F401
 import jaxlib.weakref_lru_cache as weakref_lru_cache  # noqa: F401
 import jaxlib._pretty_printer as _pretty_printer  # noqa: F401
 
-import jaxlib._ifrt_proxy as ifrt_proxy  # noqa: F401
+ifrt_proxy: ModuleType | None
+try:
+  import jaxlib._ifrt_proxy as ifrt_proxy  # noqa: F401
+except ModuleNotFoundError as err:
+  if err.name != "jaxlib._ifrt_proxy":
+    raise
+  ifrt_proxy = None
 
 from jaxlib import _hlo as hlo  # noqa: F401
 

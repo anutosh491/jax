@@ -395,6 +395,9 @@ def make_ifrt_proxy_client() -> xla_client.Client:
         "it via the JAX_BACKEND_TARGET environment variable or the "
         "jax_backend_target config option, e.g. "
         "JAX_BACKEND_TARGET=grpc://localhost:29000.")
+  if ifrt_proxy is None:
+    raise RuntimeError(
+        "The 'proxy' backend requires jaxlib to be built with _ifrt_proxy support.")
   return ifrt_proxy.get_client(target, ifrt_proxy.ClientConnectionOptions())
 
 

@@ -14,6 +14,8 @@
 
 import os
 import platform
+import subprocess
+import sys
 
 from absl import logging
 from absl.testing import absltest
@@ -286,6 +288,27 @@ class XlaBridgeTest(jtu.JaxTestCase):
   def test_make_ifrt_proxy_client_requires_backend_target(self):
     with mock.patch.object(xb.BACKEND_TARGET, "value", ""):
       with self.assertRaisesRegex(RuntimeError, "JAX_BACKEND_TARGET"):
+        xb.make_ifrt_proxy_client()
+
+  def test_import_without_ifrt_proxy(self):
+    if not sys.executable:
+      self.skipTest("test requires sys.executable")
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import sys
+sys.modules['jaxlib._ifrt_proxy'] = None
+import jax
+from jax._src.lib import ifrt_proxy
+assert ifrt_proxy is None
+"""], capture_output=True, text=True)
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+  def test_make_ifrt_proxy_client_without_extension(self):
+    with (
+        mock.patch.object(xb.BACKEND_TARGET, "value", "grpc://localhost:1234"),
+        mock.patch.object(xb, "ifrt_proxy", None),
+    ):
+      with self.assertRaisesRegex(RuntimeError, "_ifrt_proxy support"):
         xb.make_ifrt_proxy_client()
 
   def test_make_ifrt_proxy_client(self):
