@@ -63,11 +63,10 @@ archive_override(
 
 # TODO: use a released version when available
 bazel_dep(name = "xla")
-archive_override(
+git_override(
     module_name = "xla",
-    integrity = "sha256-wloMEe6MWT+wslkDc14rAG1dPp++ssNjRM0LDc+X12g=",
-    strip_prefix = "xla-e5d008bb03d9b133b0881daf3d108adea8e6625b",
-    urls = ["https://github.com/openxla/xla/archive/e5d008bb03d9b133b0881daf3d108adea8e6625b.tar.gz"],
+    remote = "https://github.com/anutosh491/xla.git",
+    commit = "4a3ed06eee75b376e9aab20211e5ee600790a498",
 )
 
 # TODO: upstream, otherwise we have to duplicate the patches in jax
