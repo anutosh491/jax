@@ -57,11 +57,13 @@ limitations under the License.
 #include "xla/backends/cpu/collectives/cpu_collectives.h"
 #include "xla/pjrt/c/pjrt_c_api.h"
 #include "xla/pjrt/cpu/cpu_client.h"
+#if !defined(__EMSCRIPTEN__)
 #include "xla/pjrt/distributed/client.h"
 #include "xla/pjrt/distributed/distributed.h"
 #include "xla/pjrt/distributed/mtls.h"
 #include "xla/pjrt/distributed/protocol.pb.h"
 #include "xla/pjrt/distributed/service.h"
+#endif  // !defined(__EMSCRIPTEN__)
 #include "xla/pjrt/pjrt_compiler.h"
 #include "xla/pjrt/pjrt_topology_description_registry.h"
 #include "xla/pjrt/plugin/xla_cpu/cpu_client_options.h"
@@ -74,7 +76,9 @@ limitations under the License.
 #include "xla/python/ifrt/executable.h"
 #include "xla/python/ifrt/topology.h"
 #include "xla/python/pjrt_ifrt/pjrt_attribute_map_util.h"
+#if !defined(__EMSCRIPTEN__)
 #include "xla/python/pjrt_ifrt/transfer_server_interface.h"
+#endif  // !defined(__EMSCRIPTEN__)
 #include "xla/python/version.h"
 #include "xla/tsl/python/lib/core/numpy.h"  // NOLINT
 
@@ -90,9 +94,10 @@ limitations under the License.
 #include "xla/backends/cpu/collectives/gloo_kv_store.h"  // NOLINT
 #endif  // defined(__linux__)
 
-#if !defined(_WIN32) && !defined(PLATFORM_GOOGLE)
+#if !defined(_WIN32) && !defined(PLATFORM_GOOGLE) && \
+    !defined(__EMSCRIPTEN__)
 #include "xla/backends/cpu/collectives/mpi_collectives.h"
-#endif  // !_WIN32 && !PLATFORM_GOOGLE
+#endif  // !_WIN32 && !PLATFORM_GOOGLE && !__EMSCRIPTEN__
 
 #include "jaxlib/call_location.h"
 #include "jaxlib/config.h"
@@ -118,8 +123,10 @@ limitations under the License.
 #include "jaxlib/xla_compiler.h"
 #include "xla/hlo/builder/lib/approx_topk_shape.h"
 #include "xla/pjrt/c_api_client/pjrt_c_api_client.h"
+#if !defined(__EMSCRIPTEN__)
 #include "xla/pjrt/distributed/key_value_store_interface.h"
 #include "xla/pjrt/distributed/preemption/preemption_sync_manager.h"
+#endif  // !defined(__EMSCRIPTEN__)
 #include "xla/pjrt/exceptions.h"
 #include "xla/pjrt/pjrt_api.h"
 #include "xla/pjrt/pjrt_client.h"
@@ -132,7 +139,9 @@ limitations under the License.
 #include "xla/python/nb_absl_span.h"  // IWYU pragma: keep
 #include "xla/python/pjrt_ifrt/pjrt_client.h"
 #include "xla/python/pjrt_ifrt/pjrt_topology.h"
+#if !defined(__EMSCRIPTEN__)
 #include "xla/tsl/distributed_runtime/preemption/preemption_sync_manager.h"
+#endif  // !defined(__EMSCRIPTEN__)
 #include "xla/tsl/platform/status.h"
 #include "tsl/platform/platform.h"
 
@@ -283,6 +292,7 @@ void translate_xla_runtime_error(const std::exception_ptr& p, void*) {
 
 // Returns an mTLS configuration for the coordination service if any of the
 // mtls_* arguments is set, or std::nullopt (insecure credentials) otherwise.
+#if !defined(__EMSCRIPTEN__)
 std::optional<xla::MtlsConfig> BuildCoordinationMtlsConfig(
     const std::optional<std::string>& mtls_cert_file,
     const std::optional<std::string>& mtls_key_file,
@@ -307,6 +317,7 @@ std::optional<xla::MtlsConfig> BuildCoordinationMtlsConfig(
   }
   return config;
 }
+#endif  // !defined(__EMSCRIPTEN__)
 
 }  // namespace
 
@@ -380,6 +391,7 @@ NB_MODULE(_jax, m) {
         throw std::runtime_error("Finalize is not implemented");
       });
 
+#if !defined(__EMSCRIPTEN__)
   m.def(
       "make_gloo_tcp_collectives",
       [](std::shared_ptr<xla::DistributedRuntimeClient> distributed_client,
@@ -430,8 +442,20 @@ NB_MODULE(_jax, m) {
       },
       nb::arg("distributed_client"), nb::arg("hostname").none() = std::nullopt,
       nb::arg("interface").none() = std::nullopt);
+#else
+  m.def(
+      "make_gloo_tcp_collectives",
+      [](nb::object, std::optional<std::string>, std::optional<std::string>)
+          -> std::shared_ptr<xla::cpu::CpuCollectives> {
+        throw xla::XlaRuntimeError(
+            "Gloo collectives are unavailable in an Emscripten browser");
+      },
+      nb::arg("distributed_client"), nb::arg("hostname").none() = std::nullopt,
+      nb::arg("interface").none() = std::nullopt);
+#endif  // !defined(__EMSCRIPTEN__)
 
-#if !defined(_WIN32) && !defined(PLATFORM_GOOGLE)
+#if !defined(_WIN32) && !defined(PLATFORM_GOOGLE) && \
+    !defined(__EMSCRIPTEN__)
   nb::class_<xla::cpu::MpiCollectives> mpi_collectives(m, "MpiCollectives",
                                                        cpu_collectives);
   mpi_collectives.def("Init", &xla::cpu::MpiCollectives::Init);
@@ -440,14 +464,15 @@ NB_MODULE(_jax, m) {
         []() -> std::shared_ptr<xla::cpu::MpiCollectives> {
           return std::make_shared<xla::cpu::MpiCollectives>();
         });
-#else   // !_WIN32 && !PLATFORM_GOOGLE
+#else   // !_WIN32 && !PLATFORM_GOOGLE && !__EMSCRIPTEN__
   m.def("make_mpi_collectives",
         []() -> std::shared_ptr<xla::cpu::CpuCollectives> {
           throw xla::XlaRuntimeError(
-              "make_mpi_collectives is not implemented for Windows");
+              "MPI collectives are unavailable on this platform");
         });
-#endif  // !_WIN32 && !PLATFORM_GOOGLE
+#endif  // !_WIN32 && !PLATFORM_GOOGLE && !__EMSCRIPTEN__
 
+#if !defined(__EMSCRIPTEN__)
   m.def(
       "get_tfrt_cpu_client",
       [](bool asynchronous,
@@ -505,6 +530,58 @@ NB_MODULE(_jax, m) {
       nb::arg("get_local_topology_timeout_minutes").none() = std::nullopt,
       nb::arg("get_global_topology_timeout_minutes").none() = std::nullopt,
       nb::arg("transfer_server_factory").none() = std::nullopt);
+#else
+  m.def(
+      "get_tfrt_cpu_client",
+      [](bool asynchronous, nb::object distributed_client, int node_id,
+         int num_nodes,
+         std::shared_ptr<xla::cpu::CpuCollectives> collectives,
+         std::optional<int> num_devices,
+         std::optional<int> get_local_topology_timeout_minutes,
+         std::optional<int> get_global_topology_timeout_minutes,
+         nb::object transfer_server_factory) -> nb_class_ptr<PyClient> {
+        if (!distributed_client.is_none() || node_id != 0 || num_nodes != 1 ||
+            !transfer_server_factory.is_none()) {
+          throw xla::XlaRuntimeError(
+              "Distributed CPU clients are unavailable in an Emscripten "
+              "browser");
+        }
+        std::unique_ptr<xla::ifrt::PjRtClient> ifrt_client;
+        {
+          nb::gil_scoped_release gil_release;
+          xla::CpuClientOptions options;
+          options.asynchronous = asynchronous;
+          options.collectives = std::move(collectives);
+          options.process_id = 0;
+          options.cpu_device_count = num_devices;
+          std::unique_ptr<xla::PjRtClient> client =
+              xla::ValueOrThrow(xla::GetPjRtCpuClient(std::move(options)));
+          xla::ifrt::PjRtClient::CreateOptions ifrt_options;
+          ifrt_options.pjrt_client =
+              std::shared_ptr<xla::PjRtClient>(std::move(client));
+          if (get_local_topology_timeout_minutes.has_value()) {
+            ifrt_options.get_local_topology_timeout =
+                absl::Minutes(*get_local_topology_timeout_minutes);
+          }
+          if (get_global_topology_timeout_minutes.has_value()) {
+            ifrt_options.get_global_topology_timeout =
+                absl::Minutes(*get_global_topology_timeout_minutes);
+          }
+          ifrt_client = xla::ValueOrThrow(
+              xla::ifrt::PjRtClient::Create(std::move(ifrt_options)));
+        }
+        return PyClient::Make(std::move(ifrt_client));
+      },
+      nb::arg("asynchronous") = true,
+      nb::arg("distributed_client").none() = nb::none(),
+      nb::arg("node_id") = 0, nb::arg("num_nodes") = 1,
+      nb::arg("collectives").none() =
+          std::shared_ptr<xla::cpu::CpuCollectives>(),
+      nb::arg("num_devices").none() = std::nullopt,
+      nb::arg("get_local_topology_timeout_minutes").none() = std::nullopt,
+      nb::arg("get_global_topology_timeout_minutes").none() = std::nullopt,
+      nb::arg("transfer_server_factory").none() = nb::none());
+#endif  // !defined(__EMSCRIPTEN__)
   m.def("pjrt_plugin_loaded", [](std::string platform_name) -> bool {
     absl::StatusOr<const PJRT_Api*> pjrt_api = pjrt::PjrtApi(platform_name);
     return pjrt_api.ok();
@@ -543,6 +620,7 @@ NB_MODULE(_jax, m) {
     return xla::ThrowIfError(pjrt::InitializePjrtPlugin(platform_name));
   });
 
+#if !defined(__EMSCRIPTEN__)
   m.def(
       "get_c_api_client",
       [](std::string platform_name,
@@ -589,6 +667,45 @@ NB_MODULE(_jax, m) {
       nb::arg("transfer_server_factory").none() = std::nullopt,
       nb::arg("force_dcn_cross_host_transfers") = false,
       nb::arg("sort_devices_by_process_index") = true);
+#else
+  m.def(
+      "get_c_api_client",
+      [](std::string platform_name,
+         const absl::flat_hash_map<std::string, xla::PjRtValueType>& options,
+         nb::object distributed_client, nb::object transfer_server_factory,
+         bool force_dcn_cross_host_transfers,
+         bool sort_devices_by_process_index) -> nb_class_ptr<PyClient> {
+        if (!distributed_client.is_none() ||
+            !transfer_server_factory.is_none() ||
+            force_dcn_cross_host_transfers) {
+          throw xla::XlaRuntimeError(
+              "Distributed C API clients are unavailable in an Emscripten "
+              "browser");
+        }
+        std::unique_ptr<xla::ifrt::PjRtClient> ifrt_client;
+        {
+          nb::gil_scoped_release gil_release;
+          std::unique_ptr<xla::PjRtClient> c_api_client = xla::ValueOrThrow(
+              xla::GetCApiClient(platform_name, options, /*kv_store=*/nullptr));
+          xla::ifrt::PjRtClient::CreateOptions ifrt_options;
+          ifrt_options.pjrt_client =
+              std::shared_ptr<xla::PjRtClient>(std::move(c_api_client));
+          ifrt_options.use_kv_store_for_topology_exchange = false;
+          ifrt_options.sort_devices_by_process_index =
+              sort_devices_by_process_index;
+          ifrt_client = xla::ValueOrThrow(
+              xla::ifrt::PjRtClient::Create(std::move(ifrt_options)));
+        }
+        return PyClient::Make(std::move(ifrt_client));
+      },
+      nb::arg("platform_name"),
+      nb::arg("options") =
+          absl::flat_hash_map<std::string, xla::PjRtValueType>(),
+      nb::arg("distributed_client").none() = nb::none(),
+      nb::arg("transfer_server_factory").none() = nb::none(),
+      nb::arg("force_dcn_cross_host_transfers") = false,
+      nb::arg("sort_devices_by_process_index") = true);
+#endif  // !defined(__EMSCRIPTEN__)
   // TODO(b/322357665): Delete this method after TPU plugin changes to use the
   // standard registration.
   m.def("get_default_c_api_topology",
@@ -743,6 +860,7 @@ NB_MODULE(_jax, m) {
   aux::RegisterTransferServerTypes(m);
 #endif  // defined(__linux__)
 
+#if !defined(__EMSCRIPTEN__)
   nb::class_<xla::PreemptionSyncManager> preemption_sync_manager(
       m, "PreemptionSyncManager");
   preemption_sync_manager
@@ -1046,6 +1164,7 @@ NB_MODULE(_jax, m) {
       nb::arg("mtls_ca_file").none() = std::nullopt,
       nb::arg("mtls_peer_uri_prefix").none() = std::nullopt,
       nb::arg("verify_secure_credentials").none() = std::nullopt);
+#endif  // !defined(__EMSCRIPTEN__)
 
   m.def("collect_garbage", []() { GlobalPyRefManager()->CollectGarbage(); });
 
@@ -1134,8 +1253,10 @@ NB_MODULE(_jax, m) {
                  absl::StrCat("Unknown attribute ", name).c_str());
            });
 
+#if !defined(__EMSCRIPTEN__)
   nb::class_<xla::ifrt::TransferServerInterfaceFactory>(
       m, "TransferServerInterfaceFactory");
+#endif  // !defined(__EMSCRIPTEN__)
 
   m.def("is_asan", IsAsan);
   m.def("is_msan", IsMsan);

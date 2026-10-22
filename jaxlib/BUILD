@@ -460,13 +460,6 @@ nanobind_pywrap_extension(
         "@xla//xla/pjrt/c:pjrt_c_api_raw_buffer_external",
         "@xla//xla/pjrt/c_api_client:pjrt_c_api_client",
         "@xla//xla/pjrt/cpu:cpu_client",
-        "@xla//xla/pjrt/distributed",
-        "@xla//xla/pjrt/distributed:client",
-        "@xla//xla/pjrt/distributed:key_value_store_interface",
-        "@xla//xla/pjrt/distributed:mtls",
-        "@xla//xla/pjrt/distributed:protocol_proto_cc",
-        "@xla//xla/pjrt/distributed:service",
-        "@xla//xla/pjrt/distributed/preemption:preemption_sync_manager",
         "@xla//xla/pjrt/plugin/xla_cpu:cpu_client_options",
         "@xla//xla/pjrt/plugin/xla_cpu:xla_cpu_pjrt_client",
         "@xla//xla/python:logging",
@@ -482,16 +475,33 @@ nanobind_pywrap_extension(
         "@xla//xla/python/ifrt:rtti",
         "@xla//xla/python/pjrt_ifrt",
         "@xla//xla/python/pjrt_ifrt:pjrt_attribute_map_util",
-        "@xla//xla/python/pjrt_ifrt:transfer_server_interface",
         "@xla//xla/python/pjrt_ifrt:xla_ifrt",
         "@xla//xla/tsl/concurrency:ref_count",
-        "@xla//xla/tsl/distributed_runtime/preemption:preemption_sync_manager",
         "@xla//xla/tsl/platform:status",
         "@xla//xla/tsl/platform:statusor",
-        "@xla//xla/tsl/platform/cloud:gcs_file_system",
         "@xla//xla/tsl/python/lib/core:numpy",
     ] + select({
+        # Browser CPU execution is single-process. Exclude the gRPC-backed
+        # distributed runtime, mTLS, preemption, and transfer-server APIs.
+        "@xla//xla/tsl:emscripten": [],
+        "//conditions:default": [
+            "@xla//xla/pjrt/distributed",
+            "@xla//xla/pjrt/distributed:client",
+            "@xla//xla/pjrt/distributed:key_value_store_interface",
+            "@xla//xla/pjrt/distributed:mtls",
+            "@xla//xla/pjrt/distributed:protocol_proto_cc",
+            "@xla//xla/pjrt/distributed:service",
+            "@xla//xla/pjrt/distributed/preemption:preemption_sync_manager",
+            "@xla//xla/python/pjrt_ifrt:transfer_server_interface",
+            "@xla//xla/tsl/distributed_runtime/preemption:preemption_sync_manager",
+        ],
+    }) + select({
+        # Browser execution has no GCS filesystem plugin.
+        "@xla//xla/tsl:emscripten": [],
+        "//conditions:default": ["@xla//xla/tsl/platform/cloud:gcs_file_system"],
+    }) + select({
         # gloo tcp transport only builds on linux
+        "@xla//xla/tsl:emscripten": [],
         "@xla//xla/tsl:macos": [
             "@gloo//:transport_uv",
             "@xla//xla/backends/cpu/collectives:gloo_collectives",
@@ -506,6 +516,7 @@ nanobind_pywrap_extension(
         ],
     }) + select({
         # mpitrampoline does not build on windows
+        "@xla//xla/tsl:emscripten": [],
         "@xla//xla/tsl:windows": [],
         # we support MPI collectives only in OSS builds
         "//conditions:default": if_oss(["@xla//xla/backends/cpu/collectives:mpi_collectives"]),
