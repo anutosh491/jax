@@ -30,6 +30,7 @@ import logging
 import os
 import pkgutil
 import platform as py_platform
+import sys
 import threading
 from typing import Any
 from collections.abc import Sequence
@@ -220,6 +221,11 @@ def make_tpu_client(
 
 
 def tpu_client_timer_callback(timer_secs: float) -> xla_client.Client | None:
+  # Keep TPU lowering rules registered, but do not initialize an unavailable
+  # runtime or start its warning thread in a browser.
+  if sys.platform == "emscripten":
+    return None
+
   def _log_warning():
     warnings.warn(
       f'TPU backend initialization is taking more than {timer_secs} seconds. '
