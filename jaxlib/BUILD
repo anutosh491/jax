@@ -271,6 +271,14 @@ cc_library(
 
 # This isn't a CPU kernel. This exists to catch cases where jaxlib is built for the wrong
 # target architecture.
+cc_library(
+    name = "cpu_feature_guard_wasm_impl",
+    srcs = ["cpu_feature_guard.c"],
+    alwayslink = True,
+    visibility = ["//jaxlib/wasm:__pkg__"],
+    deps = ["@xla//third_party/python_runtime:headers"],
+)
+
 nanobind_extension(
     name = "cpu_feature_guard",
     srcs = ["cpu_feature_guard.c"],
@@ -283,6 +291,10 @@ nanobind_extension(
 nanobind_pywrap_extension(
     name = "_pretty_printer",
     srcs = ["_pretty_printer.cc"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
     deps = [
         ":nb_class_ptr",
         "@com_google_absl//absl/container:inlined_vector",
@@ -322,6 +334,10 @@ nanobind_pywrap_extension(
         "weakref_lru_cache.cc",
         "weakref_lru_cache.h",
         "weakref_lru_cache_module.cc",
+    ],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
     ],
     deps = [
         ":nb_class_ptr",
@@ -372,6 +388,10 @@ py_test(
 nanobind_pywrap_extension(
     name = "utils",
     srcs = ["utils.cc"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
     deps = [
         "@com_google_absl//absl/base:log_severity",
         "@com_google_absl//absl/cleanup",
@@ -392,13 +412,23 @@ nanobind_pywrap_extension(
 nanobind_pywrap_extension(
     name = "_jax",
     srcs = ["jax.cc"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
     additional_stubgen_deps = [
         "//third_party/py/numpy",
         "//jaxlib/mlir:ir",
         "@xla//xla/python:_hlo",
     ],
     postprocess_stubgen = "//jaxlib:backport_stubs",
-    pytype_deps = py_deps(["numpy"]) + ["@xla//xla/python:_hlo"],
+    pytype_deps = select({
+        # Stub generation runs on the host. The Emscripten side-module build
+        # consumes target NumPy headers through XLA and must not select a
+        # platform wheel for wasm32.
+        "@xla//xla/tsl:emscripten": [],
+        "//conditions:default": py_deps(["numpy"]),
+    }) + ["@xla//xla/python:_hlo"],
     stub_replacement_patterns = {
         "jax.jaxlib._jax.Array$": "Array: Any",
         "jax.jaxlib._jax.ArrayImpl$": "ArrayImpl: Any",
@@ -521,6 +551,34 @@ nanobind_pywrap_extension(
         # we support MPI collectives only in OSS builds
         "//conditions:default": if_oss(["@xla//xla/backends/cpu/collectives:mpi_collectives"]),
     }),
+)
+
+# Internal implementation archive exposed only to the Emscripten side-module
+# packaging target. The public Python extension remains `:_jax`.
+alias(
+    name = "_jax_wasm_impl",
+    actual = ":_jax_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+# Implementation archives exposed only to the Emscripten side-module
+# packaging targets. Native Python extension packaging is unchanged.
+alias(
+    name = "utils_wasm_impl",
+    actual = ":utils_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+alias(
+    name = "weakref_lru_cache_wasm_impl",
+    actual = ":weakref_lru_cache_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+alias(
+    name = "pretty_printer_wasm_impl",
+    actual = ":_pretty_printer_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
 )
 
 py_binary(

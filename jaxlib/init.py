@@ -13,3 +13,17 @@
 # limitations under the License.
 
 from .version import __version__  # noqa: F401
+
+# The Wasm runtime supplies initialization symbols for the small MLIR facades.
+# Publish this module's symbols without changing how other extensions load.
+import sys
+
+if sys.platform == "emscripten":
+  import os
+
+  _dlopen_flags = sys.getdlopenflags()
+  try:
+    sys.setdlopenflags(_dlopen_flags | os.RTLD_GLOBAL)
+    from . import _jax  # noqa: F401
+  finally:
+    sys.setdlopenflags(_dlopen_flags)

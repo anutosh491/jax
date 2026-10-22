@@ -1,0 +1,10 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -120,5 +120,6 @@ cc_library(
+     includes = ["zlib/include/"],
+     local_defines = select({
++        "@platforms//os:emscripten": ["Z_HAVE_UNISTD_H"],
+         "@platforms//os:windows": ["_CRT_NONSTDC_NO_WARNINGS"],
+         "//conditions:default": [],
+     }),

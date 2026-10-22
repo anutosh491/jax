@@ -31,6 +31,37 @@ package(
 # LAPACK
 
 cc_library(
+    name = "sparse_wasm_impl",
+    srcs = ["sparse.cc"],
+    copts = ["-fexceptions", "-fno-strict-aliasing"],
+    alwayslink = True,
+    visibility = ["//jaxlib/wasm:__pkg__"],
+    deps = [
+        ":sparse_kernels",
+        "//jaxlib:kernel_nanobind_helpers",
+        "@com_google_absl//absl/base",
+        "@nanobind",
+        "@xla//xla/ffi/api:ffi",
+    ],
+)
+
+cc_library(
+    name = "lapack_wasm_impl",
+    srcs = ["lapack.cc"],
+    copts = ["-fexceptions", "-fno-strict-aliasing"],
+    alwayslink = True,
+    visibility = ["//jaxlib/wasm:__pkg__"],
+    deps = [
+        ":lapack_kernels",
+        ":tridiagonal_solve_kernels",
+        "//jaxlib:kernel_nanobind_helpers",
+        "@nanobind",
+        "@xla//xla/ffi/api:ffi",
+        "@xla//xla/python:safe_static_init",
+    ],
+)
+
+cc_library(
     name = "lapack_kernels",
     srcs = ["lapack_kernels.cc"],
     hdrs = ["lapack_kernels.h"],

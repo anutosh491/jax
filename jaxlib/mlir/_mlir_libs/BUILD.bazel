@@ -451,6 +451,50 @@ nanobind_pywrap_extension(
     ],
 )
 
+# Implementation archives used by the Emscripten side-module package. Native
+# Python extension targets retain their existing pywrap packaging.
+alias(
+    name = "mlir_wasm_impl",
+    actual = ":_mlir_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+alias(
+    name = "jax_mlir_ext_wasm_impl",
+    actual = ":_jax_mlir_ext_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+alias(
+    name = "chlo_wasm_impl",
+    actual = ":_chlo_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+alias(
+    name = "stablehlo_wasm_impl",
+    actual = ":_stablehlo_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+alias(
+    name = "sdy_wasm_impl",
+    actual = ":_sdy_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+alias(
+    name = "sdy_mpmd_wasm_impl",
+    actual = ":_sdyMpmd_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
+alias(
+    name = "mlir_hlo_wasm_impl",
+    actual = ":_mlirHlo_pywrap_library",
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
 py_stubgen(
     name = "_stablehlo_pyi",
     module = "jaxlib.mlir._mlir_libs._stablehlo",

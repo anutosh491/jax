@@ -18,6 +18,40 @@ bazel_dep(name = "rules_cc", version = "0.2.20")
 bazel_dep(name = "rules_python", version = "2.2.0")
 bazel_dep(name = "zlib", version = "1.3.2")
 
+emsdk_version = "6.0.8"
+bazel_dep(name = "emsdk", version = emsdk_version)
+git_override(
+    module_name = "emsdk",
+    remote = "https://github.com/emscripten-core/emsdk.git",
+    strip_prefix = "bazel",
+    tag = emsdk_version,
+)
+
+wasm_headers = use_repo_rule("//jaxlib/wasm:repositories.bzl", "wasm_headers")
+wasm_headers(
+    name = "emscripten_python_headers",
+    environment = "JAX_WASM_PYTHON_INCLUDE",
+)
+installed_emscripten = use_repo_rule("//jaxlib/wasm:repositories.bzl", "installed_emscripten")
+installed_emscripten(name = "emscripten_forge_sdk")
+emscripten_deps = use_extension("@emsdk//:emscripten_deps.bzl", "emscripten_deps")
+override_repo(
+    emscripten_deps,
+    emscripten_bin_linux = "emscripten_forge_sdk",
+    emscripten_bin_linux_arm64 = "emscripten_forge_sdk",
+    emscripten_bin_mac = "emscripten_forge_sdk",
+    emscripten_bin_mac_arm64 = "emscripten_forge_sdk",
+    emscripten_bin_win = "emscripten_forge_sdk",
+)
+register_toolchains("//jaxlib/wasm:wasm_py_cc_toolchain")
+
+single_version_override(
+    module_name = "zlib",
+    patch_strip = 1,
+    patches = ["//third_party/zlib:emscripten_unistd.patch"],
+    version = "1.3.2",
+)
+
 # TODO: use a released version when available
 bazel_dep(name = "rules_ml_toolchain")
 archive_override(
@@ -55,6 +89,10 @@ use_repo(tsl_extension, "tsl")
 ### LLVM
 llvm = use_extension("@xla//third_party/extensions:llvm.bzl", "llvm_extension")
 use_repo(llvm, "llvm-project")
+
+installed_llvm = use_repo_rule("//jaxlib/wasm:repositories.bzl", "installed_llvm")
+installed_llvm(name = "installed_llvm")
+override_repo(llvm, **{"llvm-project": "installed_llvm"})
 
 ### C++ dependencies
 # TODO: convert them to Bazel modules (bazel_dep).
@@ -315,6 +353,8 @@ test_shard_count_repository = use_repo_rule(
 test_shard_count_repository(
     name = "test_shard_count",
 )
+
+register_toolchains("//jaxlib/wasm:wasm_py_cc_toolchain")
 
 external_deps_repository = use_repo_rule(
     "//third_party/external_deps:workspace.bzl",

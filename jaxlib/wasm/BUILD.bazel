@@ -1,0 +1,287 @@
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_python//python/cc:py_cc_toolchain.bzl", "py_cc_toolchain")
+load("//jaxlib/wasm:python_extension.bzl", "wasm_python_extension", "wasm_python_facade")
+
+package(default_visibility = ["//visibility:public"])
+
+py_cc_toolchain(
+    name = "wasm_py_cc_toolchain_impl",
+    headers = "@emscripten_python_headers//:headers",
+    python_version = "3.14",
+)
+
+toolchain(
+    name = "wasm_py_cc_toolchain",
+    target_compatible_with = ["@platforms//os:emscripten"],
+    toolchain = ":wasm_py_cc_toolchain_impl",
+    toolchain_type = "@rules_python//python/cc:toolchain_type",
+)
+
+# Smallest compiled JAX boundary. Keep it as a normal C++ archive here because
+# JAX's native pywrap target is a forwarding stub whose implementation normally
+# lives in libjax_common.  A WebAssembly side module instead needs the actual
+# nanobind implementation and its PyInit symbol in one link unit.
+cc_library(
+    name = "xla_extension_impl",
+    alwayslink = True,
+    srcs = ["//jaxlib:xla.cc"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
+    deps = [
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@nanobind",
+        "@xla//xla/hlo/ir:hlo",
+        "@xla//xla/pjrt/c:pjrt_c_api_hdrs",
+        "@xla//xla/pjrt/c:pjrt_c_api_helpers",
+        "@xla//xla/pjrt/c:pjrt_c_api_status_utils",
+        "@xla//xla/pjrt/c:pjrt_c_api_xla_transform_extension_hdrs",
+        "@xla//xla/python:version",
+        "@xla//xla/service:hlo_proto_cc",
+        "@xla//xla/service:xla_transform",
+        "@xla//xla/tsl/lib/strings:proto_serialization",
+    ],
+)
+
+cc_binary(
+    name = "xla_extension_side_module",
+    deps = [":xla_extension_impl"],
+    linkopts = [
+        "-shared",
+        "--oformat=wasm",
+        "-Wl,-Bsymbolic",
+        "-Wl,--export=PyInit__xla",
+    ],
+)
+
+wasm_cc_binary(
+    name = "xla-extension-wasm",
+    cc_target = ":xla_extension_side_module",
+    threads = "off",
+)
+
+# Full JAX runtime extension. This links the same implementation archive used
+# by the native `_jax` extension into an Emscripten side module so xeus-python
+# can load it into the browser process with dlopen.
+cc_library(
+    name = "jax_extension_impl",
+    srcs = ["jax_pyinit_stub.c"],
+    deps = [
+        ":ifrt_proxy_wasm_impl",
+        "//jaxlib:_jax_wasm_impl",
+        "//jaxlib/mlir/_mlir_libs:chlo_wasm_impl",
+        "//jaxlib/mlir/_mlir_libs:jax_mlir_ext_wasm_impl",
+        "//jaxlib/mlir/_mlir_libs:mlir_wasm_impl",
+        "//jaxlib/mlir/_mlir_libs:mlir_hlo_wasm_impl",
+        "//jaxlib/mlir/_mlir_libs:sdy_mpmd_wasm_impl",
+        "//jaxlib/mlir/_mlir_libs:sdy_wasm_impl",
+        "//jaxlib/mlir/_mlir_libs:stablehlo_wasm_impl",
+        "@emscripten_python_headers//:headers",
+    ],
+)
+
+cc_binary(
+    name = "jax_extension_side_module",
+    deps = [":jax_extension_impl"],
+    linkopts = [
+        "-Wl,--export=Wrapped_PyInit__ifrt_proxy",
+        "-fwasm-exceptions",
+        "-shared",
+        "--oformat=wasm",
+        "-Wl,-Bsymbolic",
+        "-Wl,--export=PyInit__jax",
+        "-Wl,--export=Wrapped_PyInit__chlo",
+        "-Wl,--export=Wrapped_PyInit__jax_mlir_ext",
+        "-Wl,--export=Wrapped_PyInit__mlir",
+        "-Wl,--export=Wrapped_PyInit__mlirHlo",
+        "-Wl,--export=Wrapped_PyInit__sdy",
+        "-Wl,--export=Wrapped_PyInit__sdyMpmd",
+        "-Wl,--export=Wrapped_PyInit__stablehlo",
+    ],
+)
+
+wasm_cc_binary(
+    name = "jax-extension-wasm",
+    cc_target = ":jax_extension_side_module",
+    threads = "off",
+)
+
+cc_library(
+    name = "hlo_extension_impl",
+    srcs = ["hlo_pyinit_stub.c"],
+    deps = [
+        "@emscripten_python_headers//:headers",
+        "@xla//xla/python:_hlo_wasm_impl",
+    ],
+)
+
+cc_binary(
+    name = "hlo_extension_side_module",
+    deps = [":hlo_extension_impl"],
+    linkopts = [
+        "-fwasm-exceptions",
+        "-shared",
+        "--oformat=wasm",
+        "-Wl,-Bsymbolic",
+        "-Wl,--export=PyInit__hlo",
+    ],
+)
+
+wasm_cc_binary(
+    name = "hlo-extension-wasm",
+    cc_target = ":hlo_extension_side_module",
+    threads = "off",
+)
+
+wasm_python_extension(
+    name = "utils-extension",
+    module_name = "utils",
+    implementation = "//jaxlib:utils_wasm_impl",
+)
+
+wasm_python_extension(
+    name = "lapack-extension",
+    module_name = "_lapack",
+    implementation = "//jaxlib/cpu:lapack_wasm_impl",
+    wrapped = False,
+)
+
+wasm_python_extension(
+    name = "sparse-extension",
+    module_name = "_sparse",
+    implementation = "//jaxlib/cpu:sparse_wasm_impl",
+    wrapped = False,
+)
+
+wasm_python_extension(
+    name = "cpu-feature-guard-extension",
+    module_name = "cpu_feature_guard",
+    implementation = "//jaxlib:cpu_feature_guard_wasm_impl",
+    wrapped = False,
+)
+
+wasm_python_extension(
+    name = "weakref-lru-cache-extension",
+    module_name = "weakref_lru_cache",
+    implementation = "//jaxlib:weakref_lru_cache_wasm_impl",
+)
+
+wasm_python_extension(
+    name = "pretty-printer-extension",
+    module_name = "_pretty_printer",
+    implementation = "//jaxlib:pretty_printer_wasm_impl",
+)
+
+wasm_python_extension(
+    name = "profiler-extension",
+    module_name = "_profiler",
+    implementation = "@xla//xla/python:profiler_wasm_impl",
+)
+
+wasm_python_extension(
+    name = "profile-data-extension",
+    module_name = "_profile_data",
+    implementation = "@xla//xla/python:profile_data_wasm_impl",
+)
+
+wasm_python_facade(
+    name = "mlir-extension",
+    module_name = "_mlir",
+)
+
+wasm_python_facade(
+    name = "jax-mlir-ext-extension",
+    module_name = "_jax_mlir_ext",
+)
+
+wasm_python_facade(
+    name = "chlo-extension",
+    module_name = "_chlo",
+)
+
+wasm_python_facade(
+    name = "stablehlo-extension",
+    module_name = "_stablehlo",
+)
+
+wasm_python_facade(
+    name = "sdy-extension",
+    module_name = "_sdy",
+)
+
+wasm_python_facade(
+    name = "sdy-mpmd-extension",
+    module_name = "_sdyMpmd",
+)
+
+wasm_python_facade(
+    name = "mlir-hlo-extension",
+    module_name = "_mlirHlo",
+)
+
+filegroup(
+    name = "browser-extensions",
+    srcs = [
+        ":ifrt-proxy-extension-wasm",
+        ":jax-extension-wasm",
+        ":xla-extension-wasm",
+        ":hlo-extension-wasm",
+        ":cpu-feature-guard-extension-wasm",
+        ":lapack-extension-wasm",
+        ":sparse-extension-wasm",
+        ":utils-extension-wasm",
+        ":weakref-lru-cache-extension-wasm",
+        ":pretty-printer-extension-wasm",
+        ":profiler-extension-wasm",
+        ":profile-data-extension-wasm",
+        ":mlir-extension-wasm",
+        ":jax-mlir-ext-extension-wasm",
+        ":chlo-extension-wasm",
+        ":stablehlo-extension-wasm",
+        ":sdy-extension-wasm",
+        ":sdy-mpmd-extension-wasm",
+        ":mlir-hlo-extension-wasm",
+    ],
+)
+
+# Generate the same MLIR Python sources as the native wheel, without building
+# native shared extensions alongside the WebAssembly modules.
+filegroup(
+    name = "browser-python",
+    srcs = [
+        "//jaxlib:version",
+        "//jaxlib/mlir:_core_srcs",
+        "//jaxlib/mlir:_extras_srcs",
+        "//jaxlib/mlir:_ir_srcs",
+        "//jaxlib/mlir:_pass_manager_srcs",
+        "//jaxlib/mlir:_arithmetic_dialect_srcs",
+        "//jaxlib/mlir:_builtin_dialect_srcs",
+        "//jaxlib/mlir:_control_flow_dialect_srcs",
+        "//jaxlib/mlir:_func_dialect_srcs",
+        "//jaxlib/mlir:_math_dialect_srcs",
+        "//jaxlib/mlir:_memref_dialect_srcs",
+        "//jaxlib/mlir:_scf_dialect_srcs",
+        "//jaxlib/mlir:_chlo_dialect_srcs",
+        "//jaxlib/mlir:_mhlo_dialect_srcs",
+        "//jaxlib/mlir:_mpmd_dialect_srcs",
+        "//jaxlib/mlir:_sdy_dialect_srcs",
+        "//jaxlib/mlir:_stablehlo_dialect_srcs",
+        "//jaxlib/mlir:_vector_dialect_srcs",
+        "//jaxlib/mlir:_sparse_tensor_dialect_srcs",
+        "//jaxlib/mlir/_mlir_libs:__mlir_libs_srcs",
+    ],
+)
+
+cc_library(
+    name = "ifrt_proxy_wasm_impl",
+    srcs = ["//jaxlib:ifrt_proxy.cc"],
+    alwayslink = True,
+    copts = ["-fexceptions", "-DPyInit__ifrt_proxy=Wrapped_PyInit__ifrt_proxy"],
+    deps = ['//jaxlib:nb_class_ptr', '//jaxlib:py_client', '@com_google_absl//absl/container:flat_hash_map', '@com_google_absl//absl/log', '@com_google_absl//absl/log:check', '@com_google_absl//absl/log:log_entry', '@com_google_absl//absl/status', '@com_google_absl//absl/status:statusor', '@com_google_absl//absl/time', '@nanobind', '@xla//xla/pjrt:status_casters', '@xla//xla/python:nb_absl_flat_hash_map', '@xla//xla/python/ifrt', '@xla//xla/python/ifrt:attribute_map', '@xla//xla/python/ifrt_proxy/client:registry', '@xla//xla/tsl/platform:env', '@xla//xla/tsl/platform:statusor'],
+)
+
+wasm_python_facade(name = "ifrt-proxy-extension", module_name = "_ifrt_proxy")
