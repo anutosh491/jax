@@ -22,6 +22,7 @@ import importlib
 import os
 import pathlib
 import re
+import sys
 from types import ModuleType
 
 
@@ -145,9 +146,12 @@ import jaxlib.gpu_linalg as gpu_linalg  # noqa: F401
 import jaxlib.gpu_rnn as gpu_rnn  # noqa: F401
 import jaxlib.gpu_triton as gpu_triton  # noqa: F401
 
-import jaxlib.mosaic.python.mosaic_gpu as mosaic_gpu_dialect  # noqa: F401
-
-import jaxlib.mosaic.python.tpu as tpu  # noqa: F401
+if sys.platform == "emscripten":
+  mosaic_gpu_dialect = None
+  tpu = None
+else:
+  import jaxlib.mosaic.python.mosaic_gpu as mosaic_gpu_dialect  # noqa: F401
+  import jaxlib.mosaic.python.tpu as tpu  # noqa: F401
 
 # TODO(rocm): check if we need the same for rocm.
 
