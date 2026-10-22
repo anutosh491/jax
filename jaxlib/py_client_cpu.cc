@@ -25,6 +25,7 @@ limitations under the License.
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "absl/algorithm/container.h"
 #include "absl/container/inlined_vector.h"
@@ -152,8 +153,7 @@ ffi::Error XlaFfiPythonCpuCallback(xla::FfiLoadedHostCallbacks* callbacks,
         nb::borrow<nb::object>(PyTuple_GetItem(result_tuple.ptr(), i));
     xla::nb_numpy_ndarray array =
         xla::nb_numpy_ndarray::ensure(std::move(output));
-    absl::Span<int64_t const> strides(
-        reinterpret_cast<const int64_t*>(array.strides()), array.ndim());
+    std::vector<int64_t> strides = array.strides_as_int64();
     // We expect the output to be in default numpy layout.
     auto dims = absl::Span<const int64_t>(ret->dimensions().begin(),
                                           ret->dimensions().size());
@@ -171,8 +171,8 @@ ffi::Error XlaFfiPythonCpuCallback(xla::FfiLoadedHostCallbacks* callbacks,
     if (strides != expected_strides) {
       xla::TransposePlan::Options options;
       options.elem_size_in_bytes = xla::primitive_util::ByteWidth(ptype);
-      options.dims = absl::Span<const int64_t>(
-          reinterpret_cast<const int64_t*>(array.shape()), array.ndim());
+      std::vector<int64_t> shape = array.shape_as_int64();
+      options.dims = shape;
       absl::InlinedVector<int64_t, 4> reversed_layout;
       reversed_layout.resize(expected_shape.dimensions().size());
       absl::c_reverse_copy(expected_shape.layout().minor_to_major(),

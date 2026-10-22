@@ -1171,17 +1171,8 @@ absl::StatusOr<PyArgSignature> PyArgSignatureOfValue(nb::handle arg,
           if (!jax_enable_x64) {
             dtype = Squash64BitType(dtype);
           }
-          // We use reinterpret_cast<> to defend against environments where
-          // ssize_t may not be precisely the same type as int64_t, even if
-          // it is the same size (long vs long long).
-          static_assert(sizeof(int64_t) == sizeof(ssize_t),
-                        "Code assumes ssize_t is the same as int64_t");
-          return PyArgSignature(
-              dtype,
-              absl::MakeConstSpan(
-                  reinterpret_cast<const int64_t*>(numpy_array.shape()),
-                  numpy_array.ndim()),
-              /*weak_type=*/false);
+          return PyArgSignature(dtype, numpy_array.shape_as_int64(),
+                                /*weak_type=*/false);
         };
         (*p)[reinterpret_cast<PyObject*>(&PyArray_Type)] = numpy_handler;
 
@@ -1193,14 +1184,7 @@ absl::StatusOr<PyArgSignature> PyArgSignatureOfValue(nb::handle arg,
               nb::cast<xla::nb_numpy_ndarray>(h.attr("val"));
           TF_ASSIGN_OR_RETURN(xla::PrimitiveType dtype,
                               DtypeToPrimitiveType(numpy_array.dtype()));
-          static_assert(sizeof(int64_t) == sizeof(ssize_t),
-                        "Code assumes ssize_t is the same as int64_t");
-          return PyArgSignature(
-              dtype,
-              absl::MakeConstSpan(
-                  reinterpret_cast<const int64_t*>(numpy_array.shape()),
-                  numpy_array.ndim()),
-              weak_type);
+          return PyArgSignature(dtype, numpy_array.shape_as_int64(), weak_type);
         };
         if (typed_ndarray_type.ptr() != nullptr) {
           (*p)[typed_ndarray_type.ptr()] = typed_ndarray_handler;

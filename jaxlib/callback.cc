@@ -92,10 +92,8 @@ absl::Status CpuCallback::PrepareAndCall(void** result, void** arg_ptrs) {
         nb::borrow<nb::object>(PyTuple_GetItem(result_tuple.ptr(), i));
     xla::nb_numpy_ndarray array =
         xla::nb_numpy_ndarray::ensure(std::move(output));
-    absl::Span<int64_t const> dims(
-        reinterpret_cast<const int64_t*>(array.shape()), array.ndim());
-    absl::Span<int64_t const> strides(
-        reinterpret_cast<const int64_t*>(array.strides()), array.ndim());
+    std::vector<int64_t> dims = array.shape_as_int64();
+    std::vector<int64_t> strides = array.strides_as_int64();
     if (strides == results_[i].expected_strides) {
       std::memcpy(outputs[i], array.data(), results_[i].size_in_bytes);
     } else {
@@ -157,11 +155,9 @@ absl::StatusOr<nb::tuple> CpuCallback::Call(nb::tuple args) {
     } catch (nb::python_error& e) {
       return py_error_to_status(e);
     }
-    static_assert(sizeof(ssize_t) == sizeof(int64_t),
-                  "Expected ssize_t to be of equal size to int64_t");
-    absl::Span<int64_t const> dims(
-        reinterpret_cast<const int64_t*>(array.shape()), array.ndim());
-    if (dims != results_[i].expected_dims) {
+    std::vector<int64_t> dims = array.shape_as_int64();
+    if (absl::MakeConstSpan(dims) !=
+        absl::MakeConstSpan(results_[i].expected_dims)) {
       return absl::InternalError(absl::StrFormat(
           "Mismatched result shape for %d-th return value from CPU callback; "
           "expected array with dimensions %s, got %s",
