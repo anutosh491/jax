@@ -2,7 +2,9 @@ load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//python/cc:py_cc_toolchain.bzl", "py_cc_toolchain")
+load("//jaxlib:jax.bzl", "jax_wheel")
 load("//jaxlib/wasm:python_extension.bzl", "wasm_python_extension", "wasm_python_facade")
+load("//jaxlib/wasm:wheel.bzl", "wheel_manifest")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -285,3 +287,51 @@ cc_library(
 )
 
 wasm_python_facade(name = "ifrt-proxy-extension", module_name = "_ifrt_proxy")
+
+wheel_manifest(
+    name = "wheel_manifest",
+    srcs = [
+        ":browser-python",
+        "//jaxlib:README.md",
+        "//jaxlib:browser_wheel_files",
+        "//jaxlib:setup.py",
+        "//jaxlib/tools:LICENSE.txt",
+    ],
+    extensions = {
+        ":jax-extension-wasm": "jaxlib/_jax.so",
+        ":xla-extension-wasm": "jaxlib/_xla.so",
+        ":hlo-extension-wasm": "jaxlib/_hlo.so",
+        ":ifrt-proxy-extension-wasm": "jaxlib/_ifrt_proxy.so",
+        ":cpu-feature-guard-extension-wasm": "jaxlib/cpu_feature_guard.so",
+        ":lapack-extension-wasm": "jaxlib/cpu/_lapack.so",
+        ":sparse-extension-wasm": "jaxlib/cpu/_sparse.so",
+        ":utils-extension-wasm": "jaxlib/utils.so",
+        ":weakref-lru-cache-extension-wasm": "jaxlib/weakref_lru_cache.so",
+        ":pretty-printer-extension-wasm": "jaxlib/_pretty_printer.so",
+        ":profiler-extension-wasm": "jaxlib/_profiler.so",
+        ":profile-data-extension-wasm": "jaxlib/_profile_data.so",
+        ":mlir-extension-wasm": "jaxlib/mlir/_mlir_libs/_mlir.so",
+        ":jax-mlir-ext-extension-wasm": "jaxlib/mlir/_mlir_libs/_jax_mlir_ext.so",
+        ":chlo-extension-wasm": "jaxlib/mlir/_mlir_libs/_chlo.so",
+        ":stablehlo-extension-wasm": "jaxlib/mlir/_mlir_libs/_stablehlo.so",
+        ":sdy-extension-wasm": "jaxlib/mlir/_mlir_libs/_sdy.so",
+        ":sdy-mpmd-extension-wasm": "jaxlib/mlir/_mlir_libs/_sdyMpmd.so",
+        ":mlir-hlo-extension-wasm": "jaxlib/mlir/_mlir_libs/_mlirHlo.so",
+    },
+)
+
+[
+    jax_wheel(
+        name = "jaxlib_wheel_" + cpu,
+        cpu = cpu,
+        platform_name = "Emscripten",
+        source_files = [":wheel_manifest"],
+        sources_manifest = ":wheel_manifest.json",
+        wheel_binary = "//jaxlib/tools:build_wheel_tool",
+        wheel_name = "jaxlib",
+    )
+    for cpu in [
+        "wasm32",
+        "wasm64",
+    ]
+]

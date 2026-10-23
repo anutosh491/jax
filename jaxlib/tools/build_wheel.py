@@ -19,6 +19,7 @@
 
 import argparse
 import functools
+import json
 import os
 import pathlib
 import platform
@@ -59,6 +60,13 @@ parser.add_argument(
 parser.add_argument(
     "--srcs", help="source files for the wheel", action="append"
 )
+parser.add_argument(
+    "--sources_manifest",
+    help="JSON mapping of wheel destinations to source files.",
+)
+parser.add_argument(
+    "--platform_tag", help="Target platform tag for a cross-compiled wheel."
+)
 
 args = parser.parse_args()
 
@@ -86,14 +94,14 @@ def _get_file_path(src_file, runfiles=None, wheel_sources_map=None):
 
 
 def patch_copy_mlir_import(
-    src_file, dst_dir, runfiles=None, wheel_sources_map=None
+    src_file, dst_dir, runfiles=None, wheel_sources_map=None, dst_filename=None
 ):
   src_file = _get_file_path(src_file, runfiles, wheel_sources_map)
   src_filename = os.path.basename(src_file)
   with open(src_file, encoding="utf-8") as f:
     src = f.read()
 
-  with open(dst_dir / src_filename, "w", encoding="utf-8") as f:
+  with open(dst_dir / (dst_filename or src_filename), "w", encoding="utf-8") as f:
     replaced = re.sub(
         r"^from mlir(\..*)? import (.*)",
         r"from jaxlib.mlir\1 import \2",
@@ -134,8 +142,8 @@ def verify_mac_libraries_dont_reference_chkstack(
     )
 
 
-def write_setup_cfg(sources_path, cpu):
-  tag = build_utils.platform_tag(cpu)
+def write_setup_cfg(sources_path, cpu, platform_tag=None):
+  tag = platform_tag or build_utils.platform_tag(cpu)
   with open(sources_path / "setup.cfg", "w") as f:
     f.write(
         f"""[metadata]
@@ -147,9 +155,39 @@ plat_name={tag}
     )
 
 
-def prepare_wheel(wheel_sources_path: pathlib.Path, *, cpu, wheel_sources):
+def prepare_wheel(
+    wheel_sources_path: pathlib.Path,
+    *,
+    cpu,
+    wheel_sources,
+    sources_manifest=None,
+    platform_tag=None,
+):
   """Assembles a source tree for the wheel in `wheel_sources_path`. In case of
   build under @jax strip the prefix"""
+  if sources_manifest:
+    with open(sources_manifest, encoding="utf-8") as manifest:
+      sources = json.load(manifest)
+    for destination, source in sources.items():
+      relative = pathlib.PurePosixPath(destination)
+      if relative.is_absolute() or ".." in relative.parts or not relative.name:
+        raise ValueError(f"Invalid wheel destination: {destination}")
+      target = wheel_sources_path / relative
+      target.parent.mkdir(parents=True, exist_ok=True)
+      if destination.startswith("jaxlib/mlir/") and target.suffix == ".py":
+        patch_copy_mlir_import(
+            source, target.parent, dst_filename=target.name,
+            wheel_sources_map={source: source},
+        )
+      else:
+        build_utils.copy_file(
+            source, target.parent, dst_filename=target.name,
+            wheel_sources_map={source: source},
+        )
+    (wheel_sources_path / "jaxlib" / "py.typed").touch()
+    write_setup_cfg(wheel_sources_path, cpu, platform_tag)
+    return
+
   # wheel_sources is a list of file paths, not a prefix. If provided, use empty prefix.
   # Otherwise, determine prefix based on build_from_external_workspace flag.
   source_file_prefix = f"{r.CurrentRepository()}/" if not wheel_sources else ""
@@ -183,7 +221,7 @@ def prepare_wheel(wheel_sources_path: pathlib.Path, *, cpu, wheel_sources):
           f"{source_file_prefix}jaxlib/setup.py",
       ],
   )
-  write_setup_cfg(wheel_sources_path, cpu)
+  write_setup_cfg(wheel_sources_path, cpu, platform_tag)
 
   jaxlib_dir = wheel_sources_path / "jaxlib"
   copy_files(
@@ -452,6 +490,8 @@ try:
       pathlib.Path(sources_path),
       cpu=args.cpu,
       wheel_sources=args.srcs,
+      sources_manifest=args.sources_manifest,
+      platform_tag=args.platform_tag,
   )
   package_name = "jaxlib"
   if args.editable:

@@ -138,6 +138,11 @@ string_flag(
     build_setting_default = "dist",
 )
 
+string_flag(
+    name = "platform_tag",
+    build_setting_default = "",
+)
+
 # Wheel targets.
 
 # Jaxlib wheel targets.

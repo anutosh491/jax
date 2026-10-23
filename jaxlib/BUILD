@@ -145,6 +145,28 @@ symlink_files(
     flatten = True,
 )
 
+filegroup(
+    name = "browser_wheel_files",
+    srcs = [
+        ":ffi_headers",
+        ":version",
+    ] + glob(
+        [
+            "*.py",
+            "*.pyi",
+            "_jax/**/*.pyi",
+        ],
+        exclude = [
+            "setup.py",
+            "backport_stubs.py",
+            "*_test.py",
+            "_pathways.pyi",
+            "_sdy_mpmd.pyi",
+        ],
+    ),
+    visibility = ["//jaxlib/wasm:__pkg__"],
+)
+
 exports_files([
     "README.md",
     "setup.py",

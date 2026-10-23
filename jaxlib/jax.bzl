@@ -402,7 +402,8 @@ def _get_full_wheel_name(
         platform_name,
         cpu_name,
         wheel_version,
-        py_freethreaded):
+        py_freethreaded,
+        platform_tag = ""):
     if no_abi or platform_independent:
         wheel_name_template = "{package_name}-{wheel_version}-py{major_python_version}-none-{wheel_platform_tag}.whl"
     else:
@@ -413,7 +414,7 @@ def _get_full_wheel_name(
         python_version = python_version,
         major_python_version = python_version[0],
         wheel_version = wheel_version,
-        wheel_platform_tag = "any" if platform_independent else "_".join(
+        wheel_platform_tag = "any" if platform_independent else platform_tag or "_".join(
             PLATFORM_TAGS_DICT[platform_name, cpu_name],
         ),
         free_threaded_suffix = "t" if py_freethreaded.lower() == "yes" else "",
@@ -431,6 +432,7 @@ def _jax_wheel_impl(ctx):
     output_path = ctx.attr.output_path[BuildSettingInfo].value
     git_hash = ctx.attr.git_hash[BuildSettingInfo].value
     py_freethreaded = ctx.attr.py_freethreaded[BuildSettingInfo].value
+    platform_tag = ctx.attr.platform_tag[BuildSettingInfo].value
     executable = ctx.executable.wheel_binary
 
     if include_cuda_libs and not override_include_cuda_libs:
@@ -460,6 +462,8 @@ def _jax_wheel_impl(ctx):
     build_source_package_only = ctx.attr.build_source_package_only
     editable = ctx.attr.editable
     platform_name = ctx.attr.platform_name
+    if platform_name == "Emscripten" and (not platform_tag.startswith("emscripten_") or not platform_tag.endswith("_" + cpu)):
+        fail("Set --//jaxlib/tools:platform_tag for the target Emscripten version and {}".format(cpu))
 
     output_dir_path = ""
     outputs = []
@@ -478,6 +482,7 @@ def _jax_wheel_impl(ctx):
                 cpu_name = cpu,
                 wheel_version = full_wheel_version,
                 py_freethreaded = py_freethreaded,
+                platform_tag = platform_tag,
             )
             wheel_file = ctx.actions.declare_file(output_path +
                                                   "/" + wheel_name)
@@ -501,6 +506,10 @@ def _jax_wheel_impl(ctx):
     if not platform_independent:
         args.add("--cpu", cpu)
     args.add("--jaxlib_git_hash", git_hash)  # required argument
+    if platform_tag:
+        args.add("--platform_tag", platform_tag)
+    if ctx.file.sources_manifest:
+        args.add("--sources_manifest", ctx.file.sources_manifest.path)
 
     if ctx.attr.enable_cuda:
         args.add("--enable-cuda", "True")
@@ -526,6 +535,9 @@ def _jax_wheel_impl(ctx):
         for f in src.files.to_list():
             srcs.append(f)
             args.add("--srcs=%s" % (f.path))
+
+    if ctx.file.sources_manifest:
+        srcs.append(ctx.file.sources_manifest)
 
     args.set_param_file_format("flag_per_line")
     args.use_param_file("@%s", use_always = False)
@@ -555,6 +567,8 @@ _jax_wheel = rule(
         "editable": attr.bool(default = False),
         "cpu": attr.string(),
         "platform_name": attr.string(),
+        "platform_tag": attr.label(default = Label("//jaxlib/tools:platform_tag")),
+        "sources_manifest": attr.label(allow_single_file = True),
         "git_hash": attr.label(default = Label("//jaxlib/tools:jaxlib_git_hash")),
         "source_files": attr.label_list(allow_files = True),
         "output_path": attr.label(default = Label("//jaxlib/tools:output_path")),
@@ -586,7 +600,10 @@ def jax_wheel(
         enable_oneapi = False,
         platform_version = "",
         reproducible = False,
-        source_files = []):
+        source_files = [],
+        sources_manifest = None,
+        platform_name = None,
+        cpu = None):
     """Create jax artifact wheels.
 
     Common artifact attributes are grouped within a single macro.
@@ -604,6 +621,9 @@ def jax_wheel(
       platform_version: the cuda version to use for the wheel
       reproducible: whether to produce a reproducible wheel by fixing timestamps
       source_files: the source files to include in the wheel
+      sources_manifest: optional mapping from wheel destinations to source files
+      platform_name: optional target operating system override
+      cpu: optional target architecture override
 
     Returns:
       A wheel file or a wheel directory.
@@ -622,16 +642,17 @@ def jax_wheel(
         enable_oneapi = enable_oneapi,
         platform_version = platform_version,
         reproducible = reproducible,
+        sources_manifest = sources_manifest,
         # git_hash is empty by default. Use `--//jaxlib/tools:jaxlib_git_hash=$(git rev-parse HEAD)`
         # flag in bazel command to pass the git hash for nightly or release builds.
-        platform_name = select({
+        platform_name = platform_name if platform_name != None else select({
             "@platforms//os:osx": "Darwin",
             "@platforms//os:macos": "Darwin",
             "@platforms//os:windows": "Windows",
             "@platforms//os:linux": "Linux",
         }),
         # TODO(kanglan) Add @platforms//cpu:ppc64le once JAX Bazel is upgraded > 6.5.0.
-        cpu = select({
+        cpu = cpu if cpu != None else select({
             Label("//jaxlib/tools:macos_arm64"): "arm64",
             Label("//jaxlib/tools:macos_x86_64"): "x86_64",
             Label("//jaxlib/tools:win_amd64"): "AMD64",
